@@ -266,11 +266,11 @@ def get_last_object():
     cloths = [i for i in bpy.data.objects if i.modeling_cloth] # so we can select an empty and keep the settings menu up
     if bpy.context.active_object is None:
         return
-    
+
     if bpy.context.active_object.modeling_cloth:
         return cloths, bpy.context.active_object
-    
-    if len(cloths) > 0:
+
+    if cloths:
         ob = extra_data['last_object']
         return cloths, ob
     return None, None
@@ -286,8 +286,7 @@ def closest_point_edge(e1, e2, p):
     vec1 = e2 - e1
     vec2 = p - e1
     d = np.dot(vec2, vec1) / np.dot(vec1, vec1)
-    cp = e1 + vec1 * d 
-    return cp
+    return e1 + vec1 * d
 
 
 def get_weights(ob, name):
@@ -337,20 +336,20 @@ def get_extend_springs(cloth, extend_springs=False):
 
     ob.data.edges.foreach_get('vertices', eidx)
     eidx.shape = (e_count, 2)
-    sew_eidx = eidx[sew]        
+    sew_eidx = eidx[sew]
     pure = eidx[~sew]
-    
+
     # deal with sew verts connected to more than one edge
     s_t_rav = sew_eidx.T.ravel()
     s_uni, s_inv, s_counts = np.unique(s_t_rav, return_inverse=True, return_counts=True)
     s_multi = s_counts > 1
-    
+
     multi_groups = None
     if np.any(s_counts):
         multi_groups = []
         ls = sew_eidx[:,0]
         rs = sew_eidx[:,1]
-        
+
         for i in s_uni[s_multi]:
             gr = np.array([i])
             gr = np.append(gr, ls[rs==i])
@@ -363,10 +362,8 @@ def get_extend_springs(cloth, extend_springs=False):
         faces = i.link_faces
         f_verts = [[v for v in f.verts if v != i] for f in faces]
         lv = np.hstack(f_verts)
-        for v in lv:
-            uniidx.append([i.index, v.index])
-    
-    flip = np.sort(uniidx, axis=1)    
+        uniidx.extend([i.index, v.index] for v in lv)
+    flip = np.sort(uniidx, axis=1)
     uni = np.empty(shape=(0,2), dtype=np.int32)
 
     for i in range(v_count):
@@ -374,7 +371,7 @@ def get_extend_springs(cloth, extend_springs=False):
         if this.shape[0] > 0:
             idx = this[np.unique(this[:,1], return_index=True)[1]]
             uni = np.append(uni, idx, axis=0)
-    
+
 
     if extend_springs:
         extend = []
@@ -388,11 +385,9 @@ def get_extend_springs(cloth, extend_springs=False):
                     faces = obm.verts[j].link_faces
                     f_verts = [[v for v in f.verts if (v.index != j) & (v.index !=i)] for f in faces]
                     lv = np.hstack(f_verts)
-                    for v in lv:
-                        extend.append([i, v.index])
-
+                    extend.extend([i, v.index] for v in lv)
         extend = np.array(extend)
-        e_flip = np.sort(extend, axis=1)    
+        e_flip = np.sort(extend, axis=1)
         e_uni = np.empty(shape=(0,2), dtype=np.int32)
 
         for i in range(v_count):
@@ -400,13 +395,13 @@ def get_extend_springs(cloth, extend_springs=False):
             if this.shape[0] > 0:
                 idx = this[np.unique(this[:,1], return_index=True)[1]]
                 e_uni = np.append(e_uni, idx, axis=0)
-                
+
         cloth.eidx = e_uni
         return
 
     cloth.eidx = uni
     cloth.sew_edges = sew_eidx
-    cloth.multi_sew = multi_groups    
+    cloth.multi_sew = multi_groups
     cloth.pure_eidx = pure #for experimental edge self collisions
         
     #return uni, e_uni, sew_eidx, multi_groups, pure
@@ -433,11 +428,9 @@ def get_unique_diagonal_edges(ob):
                 if fv > 1:        # as we go around the loop of verts in face we start overlapping
                     skip = fv + 1 # this lets us skip the overlap so we don't have mirror duplicates
                 roller = np.roll(f_verts, fv)
-                for r in roller[skip:-1]:
-                    diag_eidx.append([roller[0], r])
-
+                diag_eidx.extend([roller[0], r] for r in roller[skip:-1])
         start += fv_count
-        
+
     return diag_eidx
 
 
@@ -452,18 +445,18 @@ def add_virtual_springs(remove=False):
     obm.verts.ensure_lookup_table()
     count = len(obm.verts)
     idxer = np.arange(count, dtype=np.int32)
-    sel = np.array([v.select for v in obm.verts])    
+    sel = np.array([v.select for v in obm.verts])
     selected = idxer[sel]
 
     if remove:
         ls = cloth.virtual_springs[:, 0]
-        
+
         in_sel = np.in1d(ls, idxer[sel])
 
         deleter = np.arange(ls.shape[0], dtype=np.int32)[in_sel]
         reduce = np.delete(cloth.virtual_springs, deleter, axis=0)
         cloth.virtual_springs = reduce
-        
+
         if cloth.virtual_springs.shape[0] == 0:
             cloth.virtual_springs.shape = (0, 2)
         return
@@ -472,7 +465,7 @@ def add_virtual_springs(remove=False):
     flip = existing[:, ::-1]
     existing = np.append(existing, flip, axis=0)
     ls = existing[:,0]
-        
+
     springs = []
     for i in idxer[sel]:
 
@@ -482,32 +475,31 @@ def add_virtual_springs(remove=False):
         v_in_r = v_in[:,1]
         not_in = selected[~np.in1d(selected, v_in_r)]
         idx_set = not_in[not_in != i]
-        for sv in idx_set:
-            springs.append([i, sv])
+        springs.extend([i, sv] for sv in idx_set)
     virtual_springs = np.array(springs, dtype=np.int32)
-    
+
     if virtual_springs.shape[0] == 0:
         virtual_springs.shape = (0, 2)
-    
+
     cloth.virtual_springs = np.append(cloth.virtual_springs, virtual_springs, axis=0)
     # gets appended to eidx in the cloth_init function after calling get connected polys in case geometry changes
 
 
 def generate_guide_mesh():
     """Makes the arrow that appears when creating pins"""
-    verts = [[0.0, 0.0, 0.0], [-0.01, -0.01, 0.1], [-0.01, 0.01, 0.1], [0.01, -0.01, 0.1], [0.01, 0.01, 0.1], [-0.03, -0.03, 0.1], [-0.03, 0.03, 0.1], [0.03, 0.03, 0.1], [0.03, -0.03, 0.1], [-0.01, -0.01, 0.2], [-0.01, 0.01, 0.2], [0.01, -0.01, 0.2], [0.01, 0.01, 0.2]]
-    edges = [[0, 5], [5, 6], [6, 7], [7, 8], [8, 5], [1, 2], [2, 4], [4, 3], [3, 1], [5, 1], [2, 6], [4, 7], [3, 8], [9, 10], [10, 12], [12, 11], [11, 9], [3, 11], [9, 1], [2, 10], [12, 4], [6, 0], [7, 0], [8, 0]]
-    faces = [[0, 5, 6], [0, 6, 7], [0, 7, 8], [0, 8, 5], [1, 3, 11, 9], [1, 2, 6, 5], [2, 4, 7, 6], [4, 3, 8, 7], [3, 1, 5, 8], [12, 10, 9, 11], [4, 2, 10, 12], [3, 4, 12, 11], [2, 1, 9, 10]]
-    name = 'ModelingClothPinGuide'
     if 'ModelingClothPinGuide' in bpy.data.objects:
         mesh_ob = bpy.data.objects['ModelingClothPinGuide']
     else:   
         mesh = bpy.data.meshes.new('ModelingClothPinGuide')
-        mesh.from_pydata(verts, edges, faces)  
+        verts = [[0.0, 0.0, 0.0], [-0.01, -0.01, 0.1], [-0.01, 0.01, 0.1], [0.01, -0.01, 0.1], [0.01, 0.01, 0.1], [-0.03, -0.03, 0.1], [-0.03, 0.03, 0.1], [0.03, 0.03, 0.1], [0.03, -0.03, 0.1], [-0.01, -0.01, 0.2], [-0.01, 0.01, 0.2], [0.01, -0.01, 0.2], [0.01, 0.01, 0.2]]
+        edges = [[0, 5], [5, 6], [6, 7], [7, 8], [8, 5], [1, 2], [2, 4], [4, 3], [3, 1], [5, 1], [2, 6], [4, 7], [3, 8], [9, 10], [10, 12], [12, 11], [11, 9], [3, 11], [9, 1], [2, 10], [12, 4], [6, 0], [7, 0], [8, 0]]
+        faces = [[0, 5, 6], [0, 6, 7], [0, 7, 8], [0, 8, 5], [1, 3, 11, 9], [1, 2, 6, 5], [2, 4, 7, 6], [4, 3, 8, 7], [3, 1, 5, 8], [12, 10, 9, 11], [4, 2, 10, 12], [3, 4, 12, 11], [2, 1, 9, 10]]
+        mesh.from_pydata(verts, edges, faces)
         mesh.update()
+        name = 'ModelingClothPinGuide'
         mesh_ob = bpy.data.objects.new(name, mesh)
         bpy.context.collection.objects.link(mesh_ob)
-        #mesh_ob.show_x_ray = True
+            #mesh_ob.show_x_ray = True
     return mesh_ob
 
 
@@ -555,41 +547,40 @@ def update_source(cloth):
 def scale_source(multiplier, cloth=None):
     """grow or shrink the source shape"""
     ob = get_last_object()[1]
-    if ob is not None:
-        if ob.modeling_cloth:
-            count = len(ob.data.vertices)
-            co = np.zeros(count*3, dtype=np.float32)
-            ob.data.shape_keys.key_blocks['modeling cloth source key'].data.foreach_get('co', co)
-            co.shape = (count, 3)
-            mean = np.mean(co, axis=0)
-            co -= mean
-            co *= multiplier
-            co += mean
-            ob.data.shape_keys.key_blocks['modeling cloth source key'].data.foreach_set('co', co.ravel())                
-            if hasattr(data[ob.name], 'cy_dists'):
-                data[ob.name].cy_dists *= multiplier
-            
-            # recalculate in cloth: (so you don't have to have dynamic source on)
-            update_source(data[ob.name])
+    if ob is not None and ob.modeling_cloth:
+        count = len(ob.data.vertices)
+        co = np.zeros(count*3, dtype=np.float32)
+        ob.data.shape_keys.key_blocks['modeling cloth source key'].data.foreach_get('co', co)
+        co.shape = (count, 3)
+        mean = np.mean(co, axis=0)
+        co -= mean
+        co *= multiplier
+        co += mean
+        ob.data.shape_keys.key_blocks['modeling cloth source key'].data.foreach_set('co', co.ravel())
+        if hasattr(data[ob.name], 'cy_dists'):
+            data[ob.name].cy_dists *= multiplier
+
+        # recalculate in cloth: (so you don't have to have dynamic source on)
+        update_source(data[ob.name])
             
 
 def reset_shapes(ob=None):
     """Sets the modeling cloth key to match the source key.
     Will regenerate shape keys if they are missing"""
-    if ob is None:    
+    if ob is None:
         if bpy.context.active_object.modeling_cloth:
             ob = bpy.context.active_object
-        else:    
+        else:
             ob = extra_data['last_object']
 
-    if ob.data.shape_keys == None:
-        ob.shape_key_add('Basis')    
+    if ob.data.shape_keys is None:
+        ob.shape_key_add('Basis')
     if 'modeling cloth source key' not in ob.data.shape_keys.key_blocks:
-        ob.shape_key_add('modeling cloth source key')        
+        ob.shape_key_add('modeling cloth source key')
     if 'modeling cloth key' not in ob.data.shape_keys.key_blocks:
         ob.shape_key_add('modeling cloth key')        
         ob.data.shape_keys.key_blocks['modeling cloth key'].value=1
-    
+
     keys = ob.data.shape_keys.key_blocks
     count = len(ob.data.vertices)
     co = np.zeros(count * 3, dtype=np.float32)
@@ -597,13 +588,13 @@ def reset_shapes(ob=None):
     #co = applied_key_co(ob, None, 'modeling cloth source key')
     #keys['modeling cloth source key'].data.foreach_set('co', co)
     keys['modeling cloth key'].data.foreach_set('co', co)
-    
+
     # reset the data stored in the class
     data[ob.name].vel[:] = 0
     co.shape = (co.shape[0]//3, 3)
     data[ob.name].co = co
     data[ob.name].vel_start = np.copy(co)
-    
+
     keys['modeling cloth key'].mute = True
     keys['modeling cloth key'].mute = False
 
@@ -618,7 +609,7 @@ def get_spring_mix(ob, eidx):
         y = np.sum(eidx[:,1] == i)    
         mixy[i] += x
         mixy[i] += y
-    
+
     for i in eidx:    
         r = eidx[eidx == i[1]].shape[0]
         l = eidx[eidx == i[0]].shape[0]
@@ -674,7 +665,7 @@ def generate_wind(wind_vec, cloth):
 
 def generate_inflate(cloth):
     """Blow it up baby!"""    
-    shape = cloth.inflate.shape    
+    shape = cloth.inflate.shape
     force = cloth.ob.modeling_cloth_inflate
     norms = cloth.normals
     #area = np.sqrt(cloth.nor_dots)
@@ -683,46 +674,22 @@ def generate_inflate(cloth):
     total_area = cloth.source_area
     current_area = np.sum(area)
     div = current_area / total_area
-    
+
     #return
     #bippy = (norms * area[:, nax]) * force# * cloth.tri_mix) * force
     bippy = (norms) * force# * cloth.tri_mix) * force
-    
+
     #print(bippy.shape)
-    
+
 
     #return
-    
+
     this = np.tile(bippy, 3)# * force * cloth.tri_mix #* div# * .02# * div
     this.shape = (shape[0] * 3, 3)
     this *= cloth.tri_mix
-    
+
     np.add.at(cloth.vel, cloth.tridex.ravel(), this)
     return
-    
-    if False:
-        tri_nor = cloth.normals #* cloth.ob.modeling_cloth_inflate # non-unit calculated by tri_normals_in_place() per each triangle
-        #tri_nor /= np.einsum("ij, ij->i", tri_nor, tri_nor)[:, nax]
-        # reshape for add.at
-        shape = cloth.inflate.shape
-        
-        cloth.inflate += tri_nor[:, nax] * cloth.ob.modeling_cloth_inflate# * cloth.nor_dots[:,nax]
-        
-        cloth.inflate.shape = (shape[0] * 3, 3)
-        
-
-        cloth.inflate *= (cloth.tri_mix)# * cloth.nor_dots)
-        root = np.sqrt(cloth.nor_dots)
-        sum = np.sum(root)
-        div = cloth.source_area / sum
-        cloth.inflate *= np.repeat((cloth.nor_dots), 3)[:,nax] #* div
-        
-        this = np.tile(cloth.normals * cloth.source_area, 3) * div
-        this.shape = (shape[0] * 3, 3)
-        #print(cloth.tri_mix.shape)
-        
-        np.add.at(cloth.vel, cloth.tridex.ravel(), this)
-        cloth.inflate.shape = shape
         #cloth.inflate *= 0
 
 
@@ -748,30 +715,30 @@ def bend_springs(cloth, co, measure=None):
     tips_co = co[tips]
     bls, brs = bend_eidx[:,0], bend_eidx[:, 1]
     b_oris = co[bls]
-    
+
     be_vecs = co[brs] - b_oris
     te_vecs = tips_co - b_oris[:, nax]
 
     bcp_dots = np.einsum('ij,ikj->ik', be_vecs, te_vecs)
     be_dots = np.einsum('ij,ij->i', be_vecs, be_vecs)
     b_div = np.nan_to_num(bcp_dots / be_dots[:, nax])
-    
+
     tcp = be_vecs[:, nax] * b_div[:, :, nax]
-    
+
     # tip vecs from cp
     tcp_vecs = te_vecs - tcp
     tcp_dots = np.einsum('ijk,ijk->ij',tcp_vecs, tcp_vecs) 
-    
+
     u_tcp_vecs = tcp_vecs / np.sqrt(tcp_dots)[:, :, nax]
-    
+
     u_tcp_ls = u_tcp_vecs[:, 0]
     u_tcp_rs = u_tcp_vecs[:, 1]
-    
+
     # dot of unit tri tips around axis
     angle_dot = np.einsum('ij,ij->i', u_tcp_ls, u_tcp_rs)
-    
+
     #paralell = angle_dot < -.9999999
-    
+
     angle = np.arccos(np.clip(angle_dot, -1, 1)) # values outside and arccos gives nan
     #angle = np.arccos(angle_dot) # values outside and arccos gives nan
 
@@ -779,7 +746,7 @@ def bend_springs(cloth, co, measure=None):
     # get the angle sign
     tcp_cross = np.cross(u_tcp_vecs[:, 0], u_tcp_vecs[:, 1])
     sign = np.sign(np.einsum('ij,ij->i', be_vecs, tcp_cross))
-    
+
     if measure is None:
         s = np.arccos(angle_dot)
         s *= sign
@@ -791,26 +758,26 @@ def bend_springs(cloth, co, measure=None):
     # rotate edges with quaternypoos
     u_be_vecs = be_vecs / np.sqrt(be_dots)[:, nax]
     b_dif = angle - measure
-    
+
     l_ws, l_axes = get_quat(b_dif, u_be_vecs)
     r_ws, r_axes = l_ws, -l_axes
-    
+
     # move tcp vecs so their origin is in the middle:
     #u_tcp_vecs *= 0.5    
-    
+
     # should I rotate the unit vecs or the source?
     #   rotating the unit vecs here.
-    
+
     stiff = cloth.ob.modeling_cloth_bend_stiff * 0.0057
     rot_ls = q_rotate(u_tcp_ls, l_ws, l_axes) 
     l_force = (rot_ls - u_tcp_ls) * stiff
-    
+
     rot_rs = q_rotate(u_tcp_rs, r_ws, r_axes)    
     r_force = (rot_rs - u_tcp_rs) * stiff
-    
+
     np.add.at(cloth.co, tips[:, 0], l_force)
     np.add.at(cloth.co, tips[:, 1], r_force)
-    
+
     np.subtract.at(cloth.co, bend_eidx.ravel(), np.tile(r_force * .5, 2).reshape(r_force.shape[0] * 2, 3))
     np.subtract.at(cloth.co, bend_eidx.ravel(), np.tile(l_force * .5, 2).reshape(l_force.shape[0] * 2, 3))
 
